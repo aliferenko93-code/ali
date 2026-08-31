@@ -40,6 +40,21 @@ jobs:
           unzip -q NeuroCamAI-source.zip
           test -f NeuroCamAI/app/build.gradle.kts
 
+      - name: Apply Kotlin 2.3 build compatibility
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NeuroCamAI/app/build.gradle.kts')
+          s = p.read_text()
+          if 'import org.jetbrains.kotlin.gradle.dsl.JvmTarget' not in s:
+              s = 'import org.jetbrains.kotlin.gradle.dsl.JvmTarget\n\n' + s
+          s = s.replace('\n    kotlinOptions {\n        jvmTarget = "17"\n    }\n', '\n')
+          if 'kotlin {\n    compilerOptions {' not in s:
+              s += '\n\nkotlin {\n    compilerOptions {\n        jvmTarget.set(JvmTarget.JVM_17)\n    }\n}\n'
+          p.write_text(s)
+          PY
+
       - name: Build installable APK
         working-directory: NeuroCamAI
         run: gradle :app:assembleDebug --stacktrace --no-daemon

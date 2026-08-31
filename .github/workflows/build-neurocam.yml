@@ -40,18 +40,47 @@ jobs:
           unzip -q NeuroCamAI-source.zip
           test -f NeuroCamAI/app/build.gradle.kts
 
-      - name: Apply Kotlin 2.3 build compatibility
+      - name: Apply build compatibility fixes
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('NeuroCamAI/app/build.gradle.kts')
+          root = Path('NeuroCamAI')
+
+          p = root / 'app/build.gradle.kts'
           s = p.read_text()
           if 'import org.jetbrains.kotlin.gradle.dsl.JvmTarget' not in s:
               s = 'import org.jetbrains.kotlin.gradle.dsl.JvmTarget\n\n' + s
           s = s.replace('\n    kotlinOptions {\n        jvmTarget = "17"\n    }\n', '\n')
+          if 'kotlinx-coroutines-android' not in s:
+              s = s.replace('    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")\n', '    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")\n    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")\n')
           if 'kotlin {\n    compilerOptions {' not in s:
               s += '\n\nkotlin {\n    compilerOptions {\n        jvmTarget.set(JvmTarget.JVM_17)\n    }\n}\n'
+          p.write_text(s)
+
+          p = root / 'app/src/main/java/com/neurocam/ai/MainActivity.kt'
+          s = p.read_text().replace('permissions:Array<out String>', 'permissions:Array<String>')
+          p.write_text(s)
+
+          p = root / 'app/src/main/java/com/neurocam/ai/editor/PortraitBlurProcessor.kt'
+          s = p.read_text().replace('import com.google.mlkit.vision.segmentation.selfie.SelfieSegmentation\n', 'import com.google.mlkit.vision.segmentation.Segmentation\n')
+          s = s.replace('SelfieSegmentation.getClient(options)', 'Segmentation.getClient(options)')
+          p.write_text(s)
+
+          p = root / 'app/src/main/java/com/neurocam/ai/vision/VisionAnalyzer.kt'
+          s = p.read_text().replace('import com.google.mlkit.vision.barcode.Barcode\n', 'import com.google.mlkit.vision.barcode.common.Barcode\n')
+          p.write_text(s)
+
+          p = root / 'app/src/main/java/com/neurocam/ai/camera/CameraController.kt'
+          s = p.read_text()
+          anchor = 'import androidx.core.content.ContextCompat\n'
+          if 'kotlinx.coroutines.CoroutineScope' not in s:
+              s = s.replace(anchor, anchor + 'import kotlinx.coroutines.CoroutineScope\nimport kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.SupervisorJob\nimport kotlinx.coroutines.cancel\nimport kotlinx.coroutines.launch\n')
+          if 'private val scope = CoroutineScope' not in s:
+              s = s.replace('    private var recording: Recording? = null\n    private var videoMode = false\n', '    private var recording: Recording? = null\n    private var videoMode = false\n    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)\n')
+          s = s.replace('                provider = future.get()\n                extensionsManager = ExtensionsManager.getInstance(context, future.get())\n                bindPhotoMode()', '                provider = future.get()\n                scope.launch {\n                    try {\n                        extensionsManager = ExtensionsManager.getInstance(context, provider!!)\n                        bindPhotoMode()\n                    } catch (t: Throwable) {\n                        onError("Не удалось инициализировать расширения камеры: ${t.message}")\n                        bindPhotoMode()\n                    }\n                }')
+          if 'scope.cancel()' not in s:
+              s = s.replace('    fun close() {\n        recording?.stop(); recording=null', '    fun close() {\n        scope.cancel()\n        recording?.stop(); recording=null')
           p.write_text(s)
           PY
 
